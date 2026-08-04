@@ -1,0 +1,3 @@
+[api] unauthorized on POST /api/uploads: Sign in required.
+[startup] port 4000 is already in use — another backend is probably still running.
+[startup] Stop it, or start this one on a different port: PORT=4001 npm start

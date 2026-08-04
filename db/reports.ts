@@ -72,6 +72,40 @@ export async function setReportStatus(
   );
 }
 
+/**
+ * Backs up the logo bytes extracted at upload time, beyond the on-disk copy in
+ * backend/uploads/<client>/ — that copy doesn't survive a restart on an
+ * ephemeral host (e.g. Render's filesystem is wiped on every redeploy or,
+ * on free tiers, idle spin-down). Read back by reportService.ts's getLogo()
+ * only when the disk copy is missing; disk is preferred when present.
+ *
+ * bytea over PostgREST is exchanged as Postgres's own hex text format
+ * ("\x" + hex digits), not raw bytes or base64 — supabase-js is a REST client,
+ * not a native driver, so this encoding has to be done by hand on both ends.
+ */
+export async function saveLogo(reportId: string | null, logo: { data: Buffer; contentType: string }): Promise<void> {
+  await runScopedQuery("saveLogo", reportId, (supabase, id) =>
+    supabase
+      .from("reports")
+      .update({
+        logo_data: `\\x${logo.data.toString("hex")}`,
+        logo_content_type: logo.contentType,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+  );
+}
+
+export async function getStoredLogo(clientSlug: string): Promise<{ data: Buffer; contentType: string } | null> {
+  const row = await runQuery("getStoredLogo", (supabase) =>
+    supabase.from("reports").select("logo_data, logo_content_type").eq("client_slug", clientSlug).maybeSingle()
+  );
+  const hexData = row?.logo_data as string | undefined;
+  const contentType = row?.logo_content_type as string | undefined;
+  if (!hexData || !contentType) return null;
+  return { data: Buffer.from(hexData.replace(/^\\x/, ""), "hex"), contentType };
+}
+
 /** Step 1 input: one row per uploaded CSV. Bytes stay on disk; this records what/where. */
 export async function saveRawUpload(
   reportId: string | null,

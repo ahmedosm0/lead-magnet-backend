@@ -1,0 +1,3 @@
+[api] unauthorized on GET /api/clients: Sign in required.
+[api] unauthorized on GET /api/clients: Sign in required.
+[api] unauthorized on POST /api/pipeline/run: Sign in required.

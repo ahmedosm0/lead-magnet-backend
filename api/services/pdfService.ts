@@ -28,6 +28,9 @@ export async function generatePdf(client: string): Promise<Buffer> {
   const pdfBuffer = await withBrowser(async (browser) => {
     const page = await browser.newPage();
 
+    // /reports/<client> is deliberately public (see frontend/src/proxy.ts and
+    // api/core/app.ts) — this headless browser needs no session for the same
+    // reason a prospect clicking the shared link needs none.
     await rethrowAs(
       () => page.goto(url, { waitUntil: "networkidle", timeout: 20_000 }),
       (cause) =>

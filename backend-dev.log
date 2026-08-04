@@ -1,0 +1,10 @@
+[startup] database connected (4074ms)
+[startup] API listening on http://localhost:4000
+[api] GET /health 200 290ms
+[api] GET /health 200 311ms
+[api] GET /api/clients 401 3ms
+[api] GET /api/clients/ecommerce-solstice-skincare/report 200 252ms
+[api] GET /api/clients 401 3ms
+[api] POST /api/pipeline/run 401 2ms
+[api] GET /api/clients/ecommerce-solstice-skincare/report 200 280ms
+[api] GET /api/clients/ecommerce-solstice-skincare/report 200 259ms

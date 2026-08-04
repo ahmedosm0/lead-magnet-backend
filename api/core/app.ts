@@ -3,7 +3,9 @@ import { cors } from "hono/cors";
 
 import { AppError, toErrorResponse } from "./errors.ts";
 import { requestLogger } from "../middleware/requestLogger.ts";
+import { requireAuth } from "../middleware/requireAuth.ts";
 import { healthRoutes } from "../routes/health.ts";
+import { authRoutes } from "../routes/auth.ts";
 import { clientRoutes } from "../routes/clients.ts";
 import { uploadRoutes } from "../routes/uploads.ts";
 import { pipelineRoutes } from "../routes/pipeline.ts";
@@ -19,8 +21,8 @@ export function createApp(): Hono {
   app.use("*", requestLogger);
 
   // The browser calls this API directly from the report/upload pages. Origins
-  // are allow-listed rather than "*" so this stays correct once credentials or
-  // an ops token are added.
+  // are allow-listed rather than "*" — required anyway once credentials are on,
+  // since a wildcard origin can't be combined with cookies.
   const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
     .map((o) => o.trim())
@@ -32,10 +34,30 @@ export function createApp(): Hono {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]),
       allowMethods: ["GET", "POST", "OPTIONS"],
       allowHeaders: ["Content-Type"],
+      credentials: true, // the session cookie rides on every request; without this the browser drops it
     })
   );
 
   app.route("/", healthRoutes);
+  app.route("/api", authRoutes); // /api/auth/* — open; this IS how a caller gets a session
+
+  // Uploading, running the pipeline, and listing every client all sit behind
+  // the one signed-in session (see api/core/session.ts — v1 has exactly one
+  // account, no user table).
+  //
+  // A single client's report/logo/pdf (GET /api/clients/:client/...) is
+  // deliberately left OPEN. That's not an oversight: docs/architecture.md has
+  // always described /reports/<client> as "the client-facing deliverable" —
+  // the whole point is to hand that link to a prospect or client who has no
+  // login. The client slug is the access control for that one report, the
+  // same "anyone with the link" model as a Google Docs share link. What stays
+  // gated is discovery: GET /api/clients (the list) requires a session so a
+  // stranger can't enumerate which reports exist, even though any one they
+  // already know the slug for is reachable without signing in.
+  app.use("/api/uploads", requireAuth);
+  app.use("/api/pipeline/*", requireAuth);
+  app.use("/api/clients", requireAuth);
+
   app.route("/api", clientRoutes);
   app.route("/api", uploadRoutes);
   app.route("/api", pipelineRoutes);

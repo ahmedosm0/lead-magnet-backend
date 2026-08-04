@@ -14,6 +14,7 @@ export type ErrorCode =
   | "validation_error"
   | "not_found"
   | "conflict"
+  | "unauthorized"
   | "upstream_error"
   | "pipeline_error"
   | "internal_error";
@@ -50,6 +51,13 @@ export class ValidationError extends AppError {
 export class NotFoundError extends AppError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, { status: 404, code: "not_found", details });
+  }
+}
+
+/** 401 — no valid session cookie. See api/core/session.ts and api/middleware/requireAuth.ts. */
+export class AuthError extends AppError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, { status: 401, code: "unauthorized", details });
   }
 }
 

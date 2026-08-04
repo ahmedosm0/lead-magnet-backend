@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { launchBrowser } from "../../lib/browser.ts";
+import { contentTypeForLogoExt } from "../../lib/logo.ts";
 
 /**
  * Derives a client's visual identity from their live website so the report
@@ -21,6 +22,18 @@ export interface ExtractedBrand {
   secondaryColor: string;
   /** True when colors came from the site; false when we fell back to neutral defaults. */
   colorsFromSite: boolean;
+}
+
+/** The logo's actual bytes, kept separate from ExtractedBrand so they never end up serialized into branding.json. */
+export interface ExtractedLogoFile {
+  data: Buffer;
+  contentType: string;
+}
+
+export interface BrandExtractionResult {
+  brand: ExtractedBrand;
+  /** Null when no logo was found — same "cosmetic, fall back to an initial badge" case as ExtractedBrand.logoPath. */
+  logoFile: ExtractedLogoFile | null;
 }
 
 /** Used when a site yields nothing usable — a neutral, contrast-safe pair, not a guess at their brand. */
@@ -112,7 +125,7 @@ function sanitizeSvg(markup: string): string {
   );
 }
 
-export async function extractBrandFromSite(siteUrl: string, clientSlug: string): Promise<ExtractedBrand> {
+export async function extractBrandFromSite(siteUrl: string, clientSlug: string): Promise<BrandExtractionResult> {
   const browser = await launchBrowser();
 
   try {
@@ -276,13 +289,16 @@ export async function extractBrandFromSite(siteUrl: string, clientSlug: string):
 
     // --- logo ---------------------------------------------------------------
     let logoPath: string | null = null;
+    let logoFile: ExtractedLogoFile | null = null;
 
     // An inline <svg> logo has no URL to fetch — write the serialized markup.
     if (harvest.inlineSvg) {
       const dir = path.join(BRANDING_ROOT, clientSlug);
       await mkdir(dir, { recursive: true });
-      await writeFile(path.join(dir, "logo.svg"), sanitizeSvg(harvest.inlineSvg), "utf-8");
+      const data = Buffer.from(sanitizeSvg(harvest.inlineSvg), "utf-8");
+      await writeFile(path.join(dir, "logo.svg"), data);
       logoPath = `/api/clients/${clientSlug}/logo`;
+      logoFile = { data, contentType: contentTypeForLogoExt("svg") };
     }
 
     // Falls back to the site icon (a real brand mark) rather than og:image.
@@ -295,13 +311,13 @@ export async function extractBrandFromSite(siteUrl: string, clientSlug: string):
         const response = await page.request.get(absolute, { timeout: 10_000 });
         if (response.ok()) {
           const body = await response.body();
-          const contentType = response.headers()["content-type"] ?? "";
+          const contentTypeHeader = response.headers()["content-type"] ?? "";
           const ext =
-            contentType.includes("svg") ? "svg"
-            : contentType.includes("png") ? "png"
-            : contentType.includes("webp") ? "webp"
-            : contentType.includes("jpeg") || contentType.includes("jpg") ? "jpg"
-            : contentType.includes("x-icon") || contentType.includes("vnd.microsoft.icon") ? "ico"
+            contentTypeHeader.includes("svg") ? "svg"
+            : contentTypeHeader.includes("png") ? "png"
+            : contentTypeHeader.includes("webp") ? "webp"
+            : contentTypeHeader.includes("jpeg") || contentTypeHeader.includes("jpg") ? "jpg"
+            : contentTypeHeader.includes("x-icon") || contentTypeHeader.includes("vnd.microsoft.icon") ? "ico"
             : path.extname(new URL(absolute).pathname).replace(".", "") || "png";
 
           if (body.length > 0 && body.length < 3 * 1024 * 1024) {
@@ -309,6 +325,9 @@ export async function extractBrandFromSite(siteUrl: string, clientSlug: string):
             await mkdir(dir, { recursive: true });
             await writeFile(path.join(dir, `logo.${ext}`), body);
             logoPath = `/api/clients/${clientSlug}/logo`;
+            // Derived from the extension, not the origin's raw header, so this
+            // matches exactly what a disk-served logo would report — see lib/logo.ts.
+            logoFile = { data: body, contentType: contentTypeForLogoExt(ext) };
           }
         }
       } catch {
@@ -325,12 +344,15 @@ export async function extractBrandFromSite(siteUrl: string, clientSlug: string):
       hostname;
 
     return {
-      agencyName: agencyName.slice(0, 80),
-      siteUrl,
-      logoPath,
-      primaryColor,
-      secondaryColor,
-      colorsFromSite,
+      brand: {
+        agencyName: agencyName.slice(0, 80),
+        siteUrl,
+        logoPath,
+        primaryColor,
+        secondaryColor,
+        colorsFromSite,
+      },
+      logoFile,
     };
   } finally {
     await browser.close();

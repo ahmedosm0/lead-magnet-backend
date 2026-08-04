@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { NotFoundError } from "../core/errors.ts";
-import { getReportRecordBySlug, listReadyClientSlugs } from "../../db/reports.ts";
+import { getReportRecordBySlug, getStoredLogo, listReadyClientSlugs } from "../../db/reports.ts";
 import { isSupabaseConfigured } from "../../db/client.ts";
+import { contentTypeForLogoExt } from "../../lib/logo.ts";
 import type { ReportRecord } from "../../scripts/assemble/types.ts";
 
 const OUTPUT_DIR = path.resolve(fileURLToPath(import.meta.url), "../../../output");
@@ -67,36 +69,50 @@ async function listClientsOnDisk(): Promise<string[]> {
   return clients;
 }
 
+export interface LogoAsset {
+  data: Uint8Array;
+  contentType: string;
+  etag: string;
+}
+
 /**
  * Locates the logo downloaded at upload time. The extension varies by what the
  * client's site served (svg/png/ico/...), so the file is found by prefix rather
  * than assumed.
+ *
+ * Disk is preferred (cheap, and correct immediately after upload in the same
+ * container) but isn't durable — an ephemeral host (Render) wipes it on every
+ * restart/redeploy/idle spin-down. When it's gone, this falls back to the copy
+ * `saveLogo` persisted to Supabase at upload time (see db/reports.ts).
  */
-export async function findLogoFile(
-  client: string
-): Promise<{ filePath: string; contentType: string; etag: string }> {
+export async function getLogo(client: string): Promise<LogoAsset> {
   const dir = path.join(UPLOADS_DIR, client);
   const entries = await readdir(dir).catch(() => []);
   const logo = entries.find((name) => name.startsWith("logo."));
-  if (!logo) throw new NotFoundError(`No logo stored for "${client}"`, { client });
 
-  const ext = path.extname(logo).toLowerCase();
-  const contentType =
-    ext === ".svg" ? "image/svg+xml"
-    : ext === ".png" ? "image/png"
-    : ext === ".webp" ? "image/webp"
-    : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg"
-    : ext === ".ico" ? "image/x-icon"
-    : "application/octet-stream";
+  if (logo) {
+    const filePath = path.join(dir, logo);
+    const contentType = contentTypeForLogoExt(path.extname(logo));
 
-  const filePath = path.join(dir, logo);
+    // The URL is stable per client but the file behind it changes on
+    // re-upload, so the response must be revalidated rather than cached by
+    // time — otherwise a client who re-uploads keeps seeing their previous
+    // logo. mtime+size is enough to detect a replacement.
+    const { mtimeMs, size } = await stat(filePath);
+    const etag = `"${Math.round(mtimeMs).toString(36)}-${size.toString(36)}"`;
 
-  // The URL is stable per client but the file behind it changes on re-upload,
-  // so the response must be revalidated rather than cached by time — otherwise
-  // a client who re-uploads keeps seeing their previous logo. mtime+size is
-  // enough to detect a replacement.
-  const { mtimeMs, size } = await stat(filePath);
-  const etag = `"${Math.round(mtimeMs).toString(36)}-${size.toString(36)}"`;
+    return { data: await readFile(filePath), contentType, etag };
+  }
 
-  return { filePath, contentType, etag };
+  if (isSupabaseConfigured()) {
+    const stored = await getStoredLogo(client);
+    if (stored) {
+      // No mtime to key off here — hash the bytes instead, still cheap enough
+      // to compute per request for something this small.
+      const etag = `"${createHash("sha1").update(stored.data).digest("hex").slice(0, 16)}"`;
+      return { data: stored.data, contentType: stored.contentType, etag };
+    }
+  }
+
+  throw new NotFoundError(`No logo stored for "${client}"`, { client });
 }

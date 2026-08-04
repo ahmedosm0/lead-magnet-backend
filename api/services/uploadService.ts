@@ -4,10 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ValidationError, UpstreamError } from "../core/errors.ts";
-import { rethrowAs } from "../core/catchAsync.ts";
+import { nonFatal, rethrowAs } from "../core/catchAsync.ts";
 import { isValidClientSlug, slugify } from "../../lib/slug.ts";
 import { extractBrandFromSite, normalizeSiteUrl, type ExtractedBrand } from "./brandService.ts";
-import { saveRawUpload, upsertReport } from "../../db/reports.ts";
+import { saveLogo, saveRawUpload, upsertReport } from "../../db/reports.ts";
 
 const UPLOADS_DIR = path.resolve(fileURLToPath(import.meta.url), "../../../uploads");
 
@@ -132,7 +132,7 @@ export async function handleUpload(input: {
   // Reading someone else's website can fail for reasons that aren't our bug
   // (DNS, TLS, timeouts, bot walls) — surface that as an upstream failure with
   // the site named, not as a generic 500.
-  const branding: ExtractedBrand = await rethrowAs(
+  const { brand: branding, logoFile } = await rethrowAs(
     () => extractBrandFromSite(normalizedUrl, slug),
     (cause) =>
       new UpstreamError(
@@ -165,6 +165,11 @@ export async function handleUpload(input: {
     branding: { ...branding },
     monthlyPlan: null, // the form deliberately doesn't collect a budget — see clientPlans.ts
   });
+
+  // Backs up the logo bytes beyond the disk copy above — that copy doesn't
+  // survive a restart on an ephemeral host (Render). See reportService.ts's
+  // getLogo() for where this is read back.
+  if (logoFile) await nonFatal(saveLogo(reportId, logoFile), "save logo to Supabase");
 
   const hash = (text: string) => createHash("sha256").update(text).digest("hex");
   await Promise.all(

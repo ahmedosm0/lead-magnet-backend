@@ -62,8 +62,9 @@ All 8 pipeline steps from `docs/pipeline-steps.md` are now built. Every step **r
 ## Requirements
 
 - Node.js >= 22.6 (uses `--experimental-strip-types` to run TypeScript directly — no build step, no `ts-node`/`tsx` dependency).
-- A `backend/.env` file (see [`.env.example`](./.env.example)) with `MISTRAL_API_KEY=...` for Step 5. Loaded via Node's built-in `--env-file=.env` flag — no `dotenv` dependency needed.
+- A `backend/.env` file (see [`.env.example`](./.env.example)) with `MISTRAL_API_KEY=...` for Step 5. Loaded via Node's built-in `--env-file-if-exists=.env` flag — no `dotenv` dependency needed. The `-if-exists` variant (not plain `--env-file`) matters once this deploys: a host like Render injects env vars directly into the process rather than writing a `.env` file, and `--env-file=.env` throws if the file is missing.
 - Optionally `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — see the database section below.
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `SESSION_SECRET` — see the Authentication section below.
 
 ## Database (optional)
 
@@ -83,6 +84,14 @@ Decisions worth keeping:
 
 `SUPABASE_SERVICE_ROLE_KEY` is a full-access secret: server-side only, never `NEXT_PUBLIC_`-prefixed, never committed. It lives only here — the frontend holds no secrets.
 
+## Authentication
+
+v1 has exactly one account — see `docs/project.md`, no user table. `ADMIN_EMAIL`/`ADMIN_PASSWORD` (`api/core/session.ts`) gate `POST /api/uploads`, `POST /api/pipeline/run`, and `GET /api/clients` (the list) behind a signed session cookie (`api/middleware/requireAuth.ts`). `SESSION_SECRET` signs that cookie — set a real one before deploying anywhere reachable from outside your machine; it falls back to a fixed, publicly-known dev value otherwise (a startup warning says so).
+
+**`GET /api/clients/:client/report`, `/logo`, and `/pdf` are deliberately left open.** `/reports/<client>` is the client-facing deliverable (see `docs/architecture.md`) — the point is to hand that link to someone with no login, the same "anyone with the link" model as a shared Google Doc. The slug is the access control for that one report; only the list (which would let a stranger enumerate every client) requires a session.
+
+That model currently depends on the frontend and backend sharing a hostname (cookie scoping ignores port, not hostname) — see "Deploying" below for what changes once they're on two separate hosts.
+
 ## LLM provider (Step 5)
 
 Today the narrative step calls **Mistral (`mistral-large-latest`)**. The step is written against a small `NarrativeProvider` interface (`scripts/narrative/providers/types.ts`), not against Mistral's SDK directly — swapping to Anthropic once a key is available means adding one file (`scripts/narrative/providers/anthropic.ts`) and a case in `providers/index.ts`, not touching the prompt, the validation, or `run.ts`. Set `LLM_PROVIDER=anthropic` in `.env` once that file exists; it defaults to `mistral`.
@@ -100,7 +109,7 @@ The extracted file is validated rather than trusted — its colors are injected 
 
 Step 7 is the Next.js app in `../frontend/`, which renders `/reports/<client>` from what this API returns. Step 8 (`api/services/pdfService.ts`, exposed as `GET /api/clients/:client/pdf` and as `npm run pdf`) drives a real headless browser against that **live URL** and prints it — rather than maintaining a second template, so the PDF can't drift from what a client sees on the link.
 
-Both the PDF export and brand extraction use `lib/browser.ts`, which reuses the Edge install already on Windows (Playwright's `channel: "msedge"`) instead of downloading a bundled Chromium. `withBrowser()` guarantees the browser closes even when the callback throws — these leak processes otherwise.
+Both the PDF export and brand extraction use `lib/browser.ts`, which tries the Edge install already on Windows first (Playwright's `channel: "msedge"`, then two known install paths), and falls back to a bare `chromium.launch()` — which finds whatever playwright-core downloaded for itself. That download isn't automatic; on Linux (no Edge at all) it must be installed once during deploy: `npx playwright-core install --with-deps chromium`. `withBrowser()` guarantees the browser closes even when the callback throws — these leak processes otherwise.
 
 **Prerequisite:** the frontend must be running (`FRONTEND_URL`, default `http://localhost:3000`) before a PDF can be generated — it's a real browser hitting a real URL, not a server-side render. Because of that cross-process dependency, PDF is **not** part of `npm run pipeline`.
 
@@ -160,3 +169,24 @@ Useful when you've only changed one step's logic and don't want to re-run everyt
 Open the `.txt` files first — they're the fast way to sanity-check the data at each stage (right columns, right row counts, nothing silently coerced to `NaN`/`null`, numbers that hand-check against the raw CSV, and for Step 5, every number in the prose actually traces back to `04_brief.json`). Every step fails loudly (throws, naming the exact row/column/reason) rather than producing bad data quietly — a missing/renamed column, a client whose Meta data mixes purchase and lead campaigns, a client with no configured spend plan, or an LLM response that doesn't match the Narrative shape should all stop the pipeline, not flow through it.
 
 No LLM is involved anywhere in Steps 1-4 — everything through `04_brief` is plain, deterministic code. Step 5 is the first and only step that calls an LLM, and it will only ever see the brief, never raw client files. That's on purpose; see [`docs/llm-context-strategy.md`](../docs/llm-context-strategy.md).
+
+## Deploying (e.g. Render)
+
+As a Web Service, Node environment:
+
+- **Build Command:** `npm install && npx playwright-core install --with-deps chromium` — the install step is required; without it, `/pdf` and website-branding extraction fail on first use (there's no Edge on Linux, see "Web view + PDF export" above).
+- **Start Command:** `npm start`
+- **Port:** don't set one. `main.ts` reads `process.env.PORT`, which Render sets itself, and `@hono/node-server`'s `serve()` already binds to all interfaces (no explicit `hostname` is passed) — both are required for Render's health checks to reach the service, and both already work with no config.
+
+**Environment variables to set on the service** (`.env` isn't deployed — see `.env.example`):
+
+| Var | Value on Render |
+|---|---|
+| `MISTRAL_API_KEY` | your key |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | your project's, if persistence is wanted |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | your real login, not the dev defaults |
+| `SESSION_SECRET` | a long random string — required here; the dev fallback is fine only on your own machine |
+| `CORS_ORIGINS` | the deployed frontend's public URL |
+| `FRONTEND_URL` | the deployed frontend's public URL (used by the PDF step's headless browser) |
+
+**The cross-domain cookie gap.** Everything above gets the pipeline working; sign-in is a separate concern. The frontend's login gate and this backend's session cookie currently work together only because local dev has them on the same hostname (`localhost`) — cookie scoping ignores port, not hostname. Render gives each service its own distinct `*.onrender.com` hostname, so **as deployed, no cookie set by this API will ever reach the frontend**, and the login gate effectively can't pass. This needs one deliberate fix before relying on the login in production — see `docs/architecture.md` "Known gaps" for the options.

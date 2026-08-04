@@ -25,6 +25,11 @@ create table if not exists reports (
   mode          text        not null default 'internal'
                             check (mode in ('internal', 'outbound', 'public')),
   branding      jsonb       not null default '{}'::jsonb,  -- agencyName, logoPath, primaryColor, secondaryColor, siteUrl
+  -- Bytes, not just a path: the logo file on disk (backend/uploads/) doesn't
+  -- survive a restart on an ephemeral host (e.g. Render) — this is what
+  -- GET /api/clients/:client/logo falls back to when the disk copy is gone.
+  logo_data          bytea,
+  logo_content_type  text,
   monthly_plan  numeric,                                    -- null = no approved budget; pacing section is omitted
   status        text        not null default 'pending'
                             check (status in ('pending', 'parsing', 'narrating', 'ready', 'failed')),

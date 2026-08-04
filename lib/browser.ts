@@ -5,9 +5,14 @@ import { chromium, type Browser } from "playwright-core";
  * brand extraction (reading a client's site) and PDF export (printing our own
  * report page).
  *
- * Uses the Edge install that already exists on Windows via Playwright's
- * "channel" option instead of downloading a bundled Chromium — that keeps
- * playwright-core the only browser dependency.
+ * Locally (Windows dev) this reuses the OS's Edge install via Playwright's
+ * "channel" option, so playwright-core never needs to bundle a browser of its
+ * own. That install doesn't exist on a Linux host (e.g. Render) — there the
+ * last rung, a bare `chromium.launch()` with no channel/path, picks up
+ * whatever playwright-core downloaded itself. That download isn't automatic:
+ * the deploy's build command must run
+ *   npx playwright-core install --with-deps chromium
+ * once, or this rung fails too. See backend/README.md "Deploying".
  */
 const EDGE_FALLBACK_PATHS = [
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -25,10 +30,16 @@ export async function launchBrowser(): Promise<Browser> {
         // try the next known path
       }
     }
-    throw new Error(
-      `Could not launch Edge via Playwright's "msedge" channel, and none of the fallback install ` +
-        `paths worked either. Original error: ${(channelError as Error).message}`
-    );
+    try {
+      return await chromium.launch({ headless: true });
+    } catch (bareError) {
+      throw new Error(
+        `Could not launch a browser: no Edge install found (channel or known paths), and ` +
+          `playwright-core's own managed browser isn't installed either. On a fresh host, run ` +
+          `"npx playwright-core install --with-deps chromium" once. ` +
+          `Channel error: ${(channelError as Error).message}. Bare launch error: ${(bareError as Error).message}`
+      );
+    }
   }
 }
 

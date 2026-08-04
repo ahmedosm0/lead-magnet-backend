@@ -8,15 +8,15 @@
     "node": ">=22.6.0"
   },
   "scripts": {
-    "dev": "node --env-file=.env --experimental-strip-types --watch main.ts",
-    "start": "node --env-file=.env --experimental-strip-types main.ts",
+    "dev": "node --env-file-if-exists=.env --experimental-strip-types --watch main.ts",
+    "start": "node --env-file-if-exists=.env --experimental-strip-types main.ts",
     "typecheck": "tsc --noEmit",
-    "pipeline": "node --env-file=.env --experimental-strip-types scripts/cli.ts",
+    "pipeline": "node --env-file-if-exists=.env --experimental-strip-types scripts/cli.ts",
     "parse": "node --experimental-strip-types scripts/parse/run.ts",
     "normalize": "node --experimental-strip-types scripts/normalize/run.ts",
     "aggregate": "node --experimental-strip-types scripts/aggregate/run.ts",
     "brief": "node --experimental-strip-types scripts/brief/run.ts",
-    "narrative": "node --env-file=.env --experimental-strip-types scripts/narrative/run.ts",
+    "narrative": "node --env-file-if-exists=.env --experimental-strip-types scripts/narrative/run.ts",
     "assemble": "node --experimental-strip-types scripts/assemble/run.ts",
     "pdf": "node --experimental-strip-types scripts/pdf/run.ts"
   },

@@ -31,10 +31,15 @@ import { writeCheckpoint } from "../lib/checkpoint.ts";
 import type { DataSources, ParsedDataset, ParsedGa4Row, ParsedMetaRow } from "./types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../../");
-const SAMPLE_DATA_DIR = path.join(REPO_ROOT, "sample-data");
-const UPLOADS_DIR = path.join(REPO_ROOT, "backend", "uploads");
-const OUTPUT_DIR = path.join(REPO_ROOT, "backend", "output");
+// This file lives at <backend-root>/scripts/parse/ — two levels down from the
+// backend's own root, which is where uploads/ and output/ actually live.
+// sample-data/ is a monorepo-only concept, one level above that (it isn't
+// shipped in the standalone backend deploy repo, so it's simply absent there
+// and the sample-data lookup below no-ops rather than erroring).
+const BACKEND_ROOT = path.resolve(__dirname, "../../");
+const SAMPLE_DATA_DIR = path.resolve(BACKEND_ROOT, "..", "sample-data");
+const UPLOADS_DIR = path.join(BACKEND_ROOT, "uploads");
+const OUTPUT_DIR = path.join(BACKEND_ROOT, "output");
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {

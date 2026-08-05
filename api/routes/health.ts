@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { catchAsync } from "../core/catchAsync.ts";
 import { checkDbHealth } from "../../db/health.ts";
 
 export const healthRoutes = new Hono();
@@ -11,8 +12,11 @@ export const healthRoutes = new Hono();
  * unreachable-but-configured database degrades status, because that means
  * writes are silently being lost.
  */
-healthRoutes.get("/health", async (c) => {
-  const db = await checkDbHealth();
-  const ok = db.state !== "unreachable";
-  return c.json({ status: ok ? "ok" : "degraded", db, uptimeSeconds: Math.round(process.uptime()) }, ok ? 200 : 503);
-});
+healthRoutes.get(
+  "/health",
+  catchAsync(async (c) => {
+    const db = await checkDbHealth();
+    const ok = db.state !== "unreachable";
+    return c.json({ status: ok ? "ok" : "degraded", db, uptimeSeconds: Math.round(process.uptime()) }, ok ? 200 : 503);
+  })
+);

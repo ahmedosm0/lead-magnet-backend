@@ -9,7 +9,9 @@ import { getReport } from "./reportService.ts";
 import { getReportIdBySlug, saveRender } from "../../db/reports.ts";
 
 const OUTPUT_DIR = path.resolve(fileURLToPath(import.meta.url), "../../../output");
-const FRONTEND_URL = process.env.FRONTEND_URL ?? "http://localhost:3000";
+// Trailing slash stripped so a Render-configured FRONTEND_URL with one doesn't
+// produce "//reports/<client>" below.
+const FRONTEND_URL = (process.env.FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 
 /**
  * Step 8 — prints the live Step 7 web view to PDF.

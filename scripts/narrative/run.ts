@@ -26,8 +26,10 @@ import type { Brief } from "../brief/types.ts";
 import type { NarrativeResult } from "./types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../../");
-const OUTPUT_DIR = path.join(REPO_ROOT, "backend", "output");
+// This file lives at <backend-root>/scripts/narrative/ — two levels down
+// from the backend's own root, where output/ actually lives.
+const BACKEND_ROOT = path.resolve(__dirname, "../../");
+const OUTPUT_DIR = path.join(BACKEND_ROOT, "output");
 
 async function discoverBriefedClients(): Promise<string[]> {
   const entries = await readdir(OUTPUT_DIR, { withFileTypes: true }).catch(() => []);

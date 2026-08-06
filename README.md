@@ -172,11 +172,10 @@ No LLM is involved anywhere in Steps 1-4 — everything through `04_brief` is pl
 
 ## Deploying (e.g. Render)
 
-As a Web Service, Node environment:
+As a **Docker** Web Service (`Dockerfile` in this directory) — not Render's native Node environment. Chromium needs `playwright-core install --with-deps`, which runs `apt-get` as root to pull in shared libraries (libnss3, libatk, etc.); Render's native Node build environment doesn't grant sudo (`su: Authentication failure` if you try), while a Docker build stage runs as root by default, so the install actually completes. The `Dockerfile` runs that install once at image build time, so it's baked into the image rather than repeated on every deploy.
 
-- **Build Command:** `npm install && npx playwright-core install --with-deps chromium` — the install step is required; without it, `/pdf` and website-branding extraction fail on first use (there's no Edge on Linux, see "Web view + PDF export" above).
-- **Start Command:** `npm start`
-- **Port:** don't set one. `main.ts` reads `process.env.PORT`, which Render sets itself, and `@hono/node-server`'s `serve()` already binds to all interfaces (no explicit `hostname` is passed) — both are required for Render's health checks to reach the service, and both already work with no config.
+- **Runtime:** Docker (point Render at this directory; it picks up `Dockerfile` automatically).
+- **Port:** don't set one. `main.ts` reads `process.env.PORT`, which Render sets itself, and `@hono/node-server`'s `serve()` already binds to all interfaces (no explicit `hostname` is passed) — both are required for Render's health checks to reach the service, and both already work with no config. The `Dockerfile` also `EXPOSE`s 4000 as a fallback default.
 
 **Environment variables to set on the service** (`.env` isn't deployed — see `.env.example`):
 

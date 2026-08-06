@@ -23,9 +23,12 @@ export function createApp(): Hono {
   // The browser calls this API directly from the report/upload pages. Origins
   // are allow-listed rather than "*" — required anyway once credentials are on,
   // since a wildcard origin can't be combined with cookies.
+  // Origins never carry a path, so a trailing slash is always a config typo,
+  // not a meaningful difference — stripped so it doesn't silently fail the
+  // exact-match check below and reject every request as a CORS error.
   const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
-    .map((o) => o.trim())
+    .map((o) => o.trim().replace(/\/+$/, ""))
     .filter(Boolean);
 
   app.use(

@@ -22,8 +22,10 @@ import type { ParsedDataset } from "../parse/types.ts";
 import type { NormalizedDataset, NormalizedMetricRow } from "./types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../../");
-const OUTPUT_DIR = path.join(REPO_ROOT, "backend", "output");
+// This file lives at <backend-root>/scripts/normalize/ — two levels down
+// from the backend's own root, where output/ actually lives.
+const BACKEND_ROOT = path.resolve(__dirname, "../../");
+const OUTPUT_DIR = path.join(BACKEND_ROOT, "output");
 
 function pad(value: string | number, width: number): string {
   return String(value).padEnd(width);

@@ -35,7 +35,7 @@ export function createApp(): Hono {
     "*",
     cors({
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]),
-      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
       allowHeaders: ["Content-Type"],
       credentials: true, // the session cookie rides on every request; without this the browser drops it
     })
@@ -60,6 +60,9 @@ export function createApp(): Hono {
   app.use("/api/uploads", requireAuth);
   app.use("/api/pipeline/*", requireAuth);
   app.use("/api/clients", requireAuth);
+  // Exact match only — the report/logo/pdf GETs live one segment deeper
+  // (/api/clients/:client/report etc.) and stay open; only DELETE lands here.
+  app.use("/api/clients/:client", requireAuth);
 
   app.route("/api", clientRoutes);
   app.route("/api", uploadRoutes);

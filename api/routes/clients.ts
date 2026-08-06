@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { ValidationError } from "../core/errors.ts";
 import { catchAsync } from "../core/catchAsync.ts";
 import { isValidClientSlug } from "../../lib/slug.ts";
-import { getLogo, getReport, listClients } from "../services/reportService.ts";
+import { deleteClient, getLogo, getReport, listClients } from "../services/reportService.ts";
 import { generatePdf } from "../services/pdfService.ts";
 
 export const clientRoutes = new Hono();
@@ -23,6 +23,19 @@ function requireSlug(raw: string | undefined): string {
 clientRoutes.get(
   "/clients",
   catchAsync(async (c) => c.json({ clients: await listClients() }))
+);
+
+// Deletion is gated by requireAuth (see api/core/app.ts) — unlike the report/
+// logo/pdf GETs below, which stay open so a client-facing link works with no
+// login, deleting is an admin action and must not be reachable by whoever
+// merely has the report link.
+clientRoutes.delete(
+  "/clients/:client",
+  catchAsync(async (c) => {
+    const client = requireSlug(c.req.param("client"));
+    await deleteClient(client);
+    return c.json({ client, deleted: true });
+  })
 );
 
 clientRoutes.get(

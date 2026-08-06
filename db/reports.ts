@@ -64,6 +64,21 @@ export async function getMonthlyPlanBySlug(clientSlug: string): Promise<number |
   return typeof plan === "number" ? plan : null;
 }
 
+/**
+ * Deletes a client's `reports` row, cascading to every child table (raw_uploads,
+ * normalized_metrics, metric_aggregates, briefs, narratives, report_records,
+ * report_renders, pipeline_runs — all FK'd on report_id with ON DELETE CASCADE,
+ * see schema.sql). Returns whether a row actually existed, so the caller can
+ * tell "deleted" from "there was nothing to delete" (the demo clients have no
+ * `reports` row at all, and a not-yet-persisted upload might not either).
+ */
+export async function deleteReportBySlug(clientSlug: string): Promise<boolean> {
+  const rows = await runQuery("deleteReportBySlug", (supabase) =>
+    supabase.from("reports").delete().eq("client_slug", clientSlug).select("id")
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 export async function getReportIdBySlug(clientSlug: string): Promise<string | null> {
   const row = await runQuery("getReportIdBySlug", (supabase) =>
     supabase.from("reports").select("id").eq("client_slug", clientSlug).maybeSingle()

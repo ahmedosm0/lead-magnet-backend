@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { NotFoundError } from "../core/errors.ts";
-import { getReportRecordBySlug, getStoredLogo, listReadyClientSlugs } from "../../db/reports.ts";
+import { deleteReportBySlug, getReportRecordBySlug, getStoredLogo, listReadyClientSlugs } from "../../db/reports.ts";
 import { isSupabaseConfigured } from "../../db/client.ts";
 import { contentTypeForLogoExt } from "../../lib/logo.ts";
 import type { ReportRecord } from "../../scripts/assemble/types.ts";
@@ -67,6 +67,37 @@ async function listClientsOnDisk(): Promise<string[]> {
     }
   }
   return clients;
+}
+
+/**
+ * Removes a client entirely: its `reports` row (cascading to every child
+ * table, see db/reports.ts's `deleteReportBySlug`) and both of its on-disk
+ * directories — `output/<client>/` (checkpoints, including 06_report.json)
+ * and `uploads/<client>/` (the raw CSVs, extracted logo, branding.json).
+ *
+ * Not a no-op if nothing was there to delete — `listClients()` is what feeds
+ * the UI this is called from, so a slug reaching here should always resolve
+ * to at least one of the two sources; if it resolves to neither, that's worth
+ * surfacing as a 404 rather than silently succeeding.
+ */
+export async function deleteClient(client: string): Promise<void> {
+  const outputDir = path.join(OUTPUT_DIR, client);
+  const uploadsDir = path.join(UPLOADS_DIR, client);
+
+  const [dbDeleted, hadOutputDir, hadUploadsDir] = await Promise.all([
+    isSupabaseConfigured() ? deleteReportBySlug(client) : Promise.resolve(false),
+    stat(outputDir).then(() => true).catch(() => false),
+    stat(uploadsDir).then(() => true).catch(() => false),
+  ]);
+
+  if (!dbDeleted && !hadOutputDir && !hadUploadsDir) {
+    throw new NotFoundError(`No report for "${client}" to delete.`, { client });
+  }
+
+  await Promise.all([
+    rm(outputDir, { recursive: true, force: true }),
+    rm(uploadsDir, { recursive: true, force: true }),
+  ]);
 }
 
 export interface LogoAsset {

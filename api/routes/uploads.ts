@@ -16,11 +16,13 @@ uploadRoutes.post(
 
     const clientName = form.get("clientName");
     const websiteUrl = form.get("websiteUrl");
+    const monthlyPlan = form.get("monthlyPlan");
     const files = form.getAll("files").filter((f): f is File => f instanceof File);
 
     const result = await handleUpload({
       clientName: typeof clientName === "string" ? clientName : "",
       websiteUrl: typeof websiteUrl === "string" ? websiteUrl : "",
+      monthlyPlan: typeof monthlyPlan === "string" ? monthlyPlan : undefined,
       files,
     });
 

@@ -21,7 +21,7 @@ import { computeCampaignRollup, computeDeltas, computePacing, computePeriodTotal
 import { computePeriods } from "./period.ts";
 import { getMonthlyPlan } from "./clientPlans.ts";
 import { writeCheckpoint } from "../lib/checkpoint.ts";
-import { getReportIdBySlug, saveAggregates } from "../../db/reports.ts";
+import { getMonthlyPlanBySlug, getReportIdBySlug, saveAggregates } from "../../db/reports.ts";
 import type { NormalizedDataset } from "../normalize/types.ts";
 import type { AggregateResult } from "./types.ts";
 
@@ -167,7 +167,10 @@ export async function aggregateClient(client: string): Promise<void> {
   // No Meta export means no spend figure at all — pacing a known plan against a
   // structural 0 would report "0% of budget spent", which is a claim about the
   // client's account we have no data for.
-  const pacing = sources.meta ? computePacing(currentPeriod.spend, getMonthlyPlan(client)) : null;
+  // The uploaded budget field (Supabase) wins when set; clientPlans.ts only
+  // covers the two disk-only demo clients, which have no `reports` row at all.
+  const monthlyPlan = (await getMonthlyPlanBySlug(client)) ?? getMonthlyPlan(client);
+  const pacing = sources.meta ? computePacing(currentPeriod.spend, monthlyPlan) : null;
 
   const result: AggregateResult = {
     client,

@@ -30,26 +30,38 @@ export type ReportStatus = "pending" | "parsing" | "narrating" | "ready" | "fail
 
 /** Creates (or refreshes) the report row for a client and returns its id. */
 export async function upsertReport(input: UpsertReportInput): Promise<string | null> {
+  // monthly_plan is only included when the caller explicitly passed it, so a
+  // re-upload that doesn't touch the budget field preserves whatever plan is
+  // already on record instead of silently wiping it back to null.
+  const payload: Record<string, unknown> = {
+    client_slug: input.clientSlug,
+    client_name: input.clientName,
+    website_url: input.websiteUrl ?? null,
+    branding: input.branding ?? {},
+    status: "pending",
+    error_message: null,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.monthlyPlan !== undefined) payload.monthly_plan = input.monthlyPlan;
+
   const row = await runQuery("upsertReport", (supabase) =>
-    supabase
-      .from("reports")
-      .upsert(
-        {
-          client_slug: input.clientSlug,
-          client_name: input.clientName,
-          website_url: input.websiteUrl ?? null,
-          branding: input.branding ?? {},
-          monthly_plan: input.monthlyPlan ?? null,
-          status: "pending",
-          error_message: null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "client_slug" }
-      )
-      .select("id")
-      .single()
+    supabase.from("reports").upsert(payload, { onConflict: "client_slug" }).select("id").single()
   );
   return (row?.id as string) ?? null;
+}
+
+/**
+ * The approved monthly ad-spend budget for a client, if one was ever supplied
+ * at upload — used by Step 3 (aggregate) for budget pacing. Returns null for
+ * the demo clients (they have no `reports` row at all) and for any uploaded
+ * client whose budget field was left blank.
+ */
+export async function getMonthlyPlanBySlug(clientSlug: string): Promise<number | null> {
+  const row = await runQuery("getMonthlyPlanBySlug", (supabase) =>
+    supabase.from("reports").select("monthly_plan").eq("client_slug", clientSlug).maybeSingle()
+  );
+  const plan = row?.monthly_plan;
+  return typeof plan === "number" ? plan : null;
 }
 
 export async function getReportIdBySlug(clientSlug: string): Promise<string | null> {

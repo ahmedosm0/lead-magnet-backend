@@ -74,12 +74,30 @@ export interface UploadResult {
   branding: ExtractedBrand;
 }
 
+/**
+ * Parses the optional "monthly ad budget" form field. Blank/absent means "not
+ * supplied" (`undefined`) — that's different from an explicit 0 and matters
+ * because upsertReport() only overwrites `monthly_plan` when the caller passes
+ * a value at all, so a re-upload with the field left blank preserves whatever
+ * budget is already on record instead of wiping it.
+ */
+function parseMonthlyPlan(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new ValidationError(`Monthly ad budget must be a positive number (got "${raw}")`, { field: "monthlyPlan" });
+  }
+  return parsed;
+}
+
 export async function handleUpload(input: {
   clientName: string;
   websiteUrl: string;
   files: File[];
+  monthlyPlan?: string;
 }): Promise<UploadResult> {
   const { clientName, websiteUrl, files } = input;
+  const monthlyPlan = parseMonthlyPlan(input.monthlyPlan);
 
   if (!clientName?.trim()) throw new ValidationError("Client name is required", { field: "clientName" });
 
@@ -163,7 +181,7 @@ export async function handleUpload(input: {
     clientName: clientName.trim(),
     websiteUrl: normalizedUrl,
     branding: { ...branding },
-    monthlyPlan: null, // the form deliberately doesn't collect a budget — see clientPlans.ts
+    monthlyPlan,
   });
 
   // Backs up the logo bytes beyond the disk copy above — that copy doesn't
